@@ -133,6 +133,11 @@ export const getVideoTimeline = async (analysisId) => {
 /* ==========================================================================
    File URLs & Download Helpers
    ========================================================================== */
+
+/**
+ * Returns a URL suitable for use in <a href> or <img src> directly in the browser.
+ * These go through Vite's /api proxy to Flask.
+ */
 export const getOutputUrl = (analysisId) => {
   return `/api/analyses/${analysisId}/output`;
 };
@@ -145,8 +150,17 @@ export const getReportUrl = (analysisId) => {
   return `/api/analyses/${analysisId}/report`;
 };
 
+/**
+ * Fetches a media file via the authenticated axios instance and returns a
+ * temporary blob object URL that can be used as <img src> or <video src>.
+ *
+ * IMPORTANT: `url` must be a path RELATIVE to the axios baseURL (/api).
+ * e.g. pass "/analyses/5/output", NOT "/api/analyses/5/output"
+ */
 export const fetchMediaBlobUrl = async (url) => {
-  const response = await api.get(url, { responseType: 'blob' });
+  // Strip a leading /api prefix so we don't double up with baseURL='/api'
+  const cleanUrl = url.startsWith('/api/') ? url.slice(4) : url;
+  const response = await api.get(cleanUrl, { responseType: 'blob' });
   return URL.createObjectURL(response.data);
 };
 

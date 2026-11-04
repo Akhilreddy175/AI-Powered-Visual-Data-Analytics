@@ -153,12 +153,8 @@ export const getReportUrl = (analysisId) => {
 /**
  * Fetches a media file via the authenticated axios instance and returns a
  * temporary blob object URL that can be used as <img src> or <video src>.
- *
- * IMPORTANT: `url` must be a path RELATIVE to the axios baseURL (/api).
- * e.g. pass "/analyses/5/output", NOT "/api/analyses/5/output"
  */
 export const fetchMediaBlobUrl = async (url) => {
-  // Strip a leading /api prefix so we don't double up with baseURL='/api'
   const cleanUrl = url.startsWith('/api/') ? url.slice(4) : url;
   const response = await api.get(cleanUrl, { responseType: 'blob' });
   return URL.createObjectURL(response.data);
@@ -176,6 +172,141 @@ export const downloadReportFile = async (analysisId, filename = 'report.csv') =>
   link.click();
   link.remove();
   URL.revokeObjectURL(blobUrl);
+};
+
+/* ==========================================================================
+   Document Intelligence Endpoints (Milestone 2)
+   ========================================================================== */
+
+/** Upload one or more documents (PDF/DOCX/TXT). Returns array of document objects. */
+export const uploadDocuments = async (formData, onUploadProgress) => {
+  const response = await api.post('/documents', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress,
+  });
+  return response.data;
+};
+
+/** List all documents with optional filters: ?status=completed&file_type=pdf */
+export const getDocuments = async (params = {}) => {
+  const response = await api.get('/documents', { params });
+  return response.data;
+};
+
+/** Get document repository summary statistics. */
+export const getDocumentStats = async () => {
+  const response = await api.get('/documents/stats');
+  return response.data;
+};
+
+/** Get a single document's metadata by id. */
+export const getDocument = async (id) => {
+  const response = await api.get(`/documents/${id}`);
+  return response.data;
+};
+
+/** Get paginated extracted text chunks for a document. */
+export const getDocumentText = async (id, params = {}) => {
+  const response = await api.get(`/documents/${id}/text`, { params });
+  return response.data;
+};
+
+/** Get structured extracted facts (hazards, PPE requirements, etc.) */
+export const getExtractedInfo = async (id) => {
+  const response = await api.get(`/documents/${id}/extracted-info`);
+  return response.data;
+};
+
+/** Trigger reprocessing of a document. */
+export const reprocessDocument = async (id) => {
+  const response = await api.post(`/documents/${id}/reprocess`);
+  return response.data;
+};
+
+/** Delete a document and all its associated data. */
+export const deleteDocument = async (id) => {
+  const response = await api.delete(`/documents/${id}`);
+  return response.data;
+};
+
+/** Download URL for original document file (use in <a href>). */
+export const getDocumentDownloadUrl = (id) => `/api/documents/${id}/download`;
+
+/* ==========================================================================
+   Search & Knowledge Q&A Endpoints (Milestone 2)
+   ========================================================================== */
+
+/** Full-text search across the document knowledge base. */
+export const searchDocuments = async (params = {}) => {
+  // params: q, document_id, file_type, limit, offset
+  const response = await api.get('/search', { params });
+  return response.data;
+};
+
+/**
+ * Ask a natural-language question. Returns supporting passages from the
+ * actual document index (no LLM hallucinations — evidence-based retrieval).
+ */
+export const askKnowledgeBase = async (question, limit = 5) => {
+  const response = await api.post('/knowledge/ask', { question, limit });
+  return response.data;
+};
+
+/* ==========================================================================
+   Milestone 3 — AI Investigation & RAG Endpoints
+   ========================================================================== */
+
+/**
+ * Ask a multimodal RAG question — combines document retrieval + visual detections.
+ * Optionally calls Gemini LLM if API key is configured.
+ */
+export const ragAsk = async (question, options = {}) => {
+  const response = await api.post('/rag/ask', {
+    question,
+    include_visual: options.includeVisual !== false,
+    document_id: options.documentId || null,
+  });
+  return response.data;
+};
+
+/**
+ * Run the full LangGraph investigation workflow.
+ * Returns workflow steps, incident info, and investigation summary.
+ */
+export const runInvestigation = async (question, options = {}) => {
+  const response = await api.post('/investigate', {
+    question,
+    document_id: options.documentId || null,
+  });
+  return response.data;
+};
+
+/** Get visual detection summary (recent analyses + violations) for the current user. */
+export const getDetectionSummary = async () => {
+  const response = await api.get('/rag/detections');
+  return response.data;
+};
+
+/* ==========================================================================
+   Incident Management Endpoints (Milestone 3)
+   ========================================================================== */
+
+/** List incidents for the current user. */
+export const getIncidents = async (params = {}) => {
+  const response = await api.get('/incidents', { params });
+  return response.data;
+};
+
+/** Get a single incident by ID. */
+export const getIncident = async (id) => {
+  const response = await api.get(`/incidents/${id}`);
+  return response.data;
+};
+
+/** Delete an incident. */
+export const deleteIncident = async (id) => {
+  const response = await api.delete(`/incidents/${id}`);
+  return response.data;
 };
 
 export default api;

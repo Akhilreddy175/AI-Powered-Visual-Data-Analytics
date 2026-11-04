@@ -39,5 +39,14 @@ class Config:
     # JWT token expiry in seconds (24 hours)
     JWT_EXPIRY_SECONDS = 86400
 
+    # Document storage folder (separate from YOLO uploads)
+    DOCUMENT_FOLDER = str(BASE_DIR / "documents")
+
+    # Allowed document extensions (validated in document_routes.py)
+    ALLOWED_DOC_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
+
     # CORS settings for local development
-    CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    CORS_ORIGINS = [
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:5174", "http://127.0.0.1:5174",
+    ]

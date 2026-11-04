@@ -13,9 +13,14 @@ import {
   Menu,
   X,
   User as UserIcon,
+  BookOpen,
+  FolderOpen,
+  Search,
+  Bot,
+  AlertTriangle,
 } from 'lucide-react';
 
-const NAV_ITEMS = [
+const PPE_NAV = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
   { name: 'Analyze Media', path: '/analyze', icon: Upload },
   { name: 'Analysis History', path: '/history', icon: History },
@@ -23,6 +28,20 @@ const NAV_ITEMS = [
   { name: 'Reports', path: '/reports', icon: FileText },
   { name: 'Settings', path: '/settings', icon: Settings },
 ];
+
+const KB_NAV = [
+  { name: 'Knowledge Base', path: '/knowledge', icon: BookOpen },
+  { name: 'Documents', path: '/documents', icon: FolderOpen },
+  { name: 'Search', path: '/search', icon: Search },
+];
+
+const AI_NAV = [
+  { name: 'AI Investigator', path: '/ai', icon: Bot },
+  { name: 'Incidents', path: '/incidents', icon: AlertTriangle },
+];
+
+// Combined for page-title lookup
+const NAV_ITEMS = [...PPE_NAV, ...KB_NAV, ...AI_NAV];
 
 export default function DashboardLayout() {
   const { user, logout } = useAuth();
@@ -86,8 +105,12 @@ export default function DashboardLayout() {
           </div>
 
           {/* Navigation Links */}
-          <nav className="p-4 space-y-1.5">
-            {NAV_ITEMS.map((item) => {
+          <nav className="p-4 space-y-1">
+            {/* PPE Detection Section */}
+            <p className="px-3 pt-1 pb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              PPE Detection
+            </p>
+            {PPE_NAV.map((item) => {
               const Icon = item.icon;
               return (
                 <NavLink
@@ -108,6 +131,60 @@ export default function DashboardLayout() {
                 </NavLink>
               );
             })}
+
+            {/* Knowledge Base Section */}
+            <div className="pt-3">
+              <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                Knowledge Base
+              </p>
+              {KB_NAV.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.name}
+                    to={item.path}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-colors ${
+                        isActive
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                      }`
+                    }
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    <span>{item.name}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+
+            {/* AI Investigation Section */}
+            <div className="pt-3">
+              <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                AI Investigation
+              </p>
+              {AI_NAV.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.name}
+                    to={item.path}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-colors ${
+                        isActive
+                          ? 'bg-violet-600 text-white shadow-sm'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                      }`
+                    }
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    <span>{item.name}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
           </nav>
         </div>
 

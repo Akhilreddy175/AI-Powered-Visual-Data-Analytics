@@ -4,7 +4,7 @@ import { useAuth } from './contexts/AuthContext';
 // Layout
 import DashboardLayout from './layouts/DashboardLayout';
 
-// Pages
+// Pages — PPE Detection (Milestone 1)
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
@@ -14,6 +14,16 @@ import HistoryDetailPage from './pages/HistoryDetailPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
+
+// Pages — Document Intelligence (Milestone 2)
+import KnowledgeDashboardPage from './pages/KnowledgeDashboardPage';
+import DocumentsPage from './pages/DocumentsPage';
+import DocumentDetailPage from './pages/DocumentDetailPage';
+import SearchPage from './pages/SearchPage';
+
+// Pages — AI Investigation (Milestone 3)
+import AIAssistantPage from './pages/AIAssistantPage';
+import IncidentPage from './pages/IncidentPage';
 
 // ProtectedRoute Component
 function ProtectedRoute({ children }) {
@@ -89,6 +99,15 @@ export default function App() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        {/* Milestone 2 — Document Intelligence */}
+        <Route path="knowledge" element={<KnowledgeDashboardPage />} />
+        <Route path="documents" element={<DocumentsPage />} />
+        <Route path="documents/:id" element={<DocumentDetailPage />} />
+        <Route path="search" element={<SearchPage />} />
+        {/* Milestone 3 — AI Investigation */}
+        <Route path="ai" element={<AIAssistantPage />} />
+        <Route path="incidents" element={<IncidentPage />} />
+        <Route path="incidents/:id" element={<IncidentPage />} />
       </Route>
 
       {/* Catch-all redirect */}

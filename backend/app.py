@@ -1,9 +1,6 @@
 """
 Main Flask application entry point.
 
-This file creates the Flask app, initializes extensions, registers route
-blueprints, and creates the database tables on first run.
-
 To start the server:
     cd "Visual Data Analytics"
     .venv\\Scripts\\activate
@@ -19,6 +16,10 @@ from backend.extensions import db, cors
 from backend.routes.auth_routes import auth_bp
 from backend.routes.analysis_routes import analysis_bp
 from backend.routes.dashboard_routes import dashboard_bp
+from backend.routes.document_routes import document_bp
+from backend.routes.search_routes import search_bp
+from backend.routes.rag_routes import rag_bp
+from backend.routes.incident_routes import incident_bp
 
 
 def create_app():
@@ -30,6 +31,7 @@ def create_app():
     # Make sure required directories exist
     Path(app.config["UPLOAD_FOLDER"]).mkdir(exist_ok=True)
     Path(app.config["OUTPUT_FOLDER"]).mkdir(exist_ok=True)
+    Path(app.config["DOCUMENT_FOLDER"]).mkdir(exist_ok=True)
     Path(__file__).resolve().parent.joinpath("instance").mkdir(exist_ok=True)
 
     # Initialize extensions
@@ -40,12 +42,24 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(analysis_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(document_bp)
+    app.register_blueprint(search_bp)
+    app.register_blueprint(rag_bp)
+    app.register_blueprint(incident_bp)
 
     # Create database tables if they don't exist yet
     with app.app_context():
         # Import models so SQLAlchemy knows about them
         from backend.models.models import User, Analysis, Detection  # noqa
+        from backend.models.document_models import Document, DocumentChunk, ExtractedFact  # noqa
+        from backend.models.incident_models import Incident  # noqa
         db.create_all()
+
+        # Configure FTS5 service to use the same DB file as SQLAlchemy, then
+        # ensure the FTS virtual table exists with the correct schema.
+        from backend.services.fts_service import configure as fts_configure, ensure_fts_table
+        fts_configure(app.config["SQLALCHEMY_DATABASE_URI"])
+        ensure_fts_table()
 
     return app
 
@@ -54,7 +68,7 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     print("=" * 60)
-    print("  PPE Detection Backend API")
+    print("  SafeVision AI Backend")
     print("  Running at: http://127.0.0.1:5000")
     print("  Press Ctrl+C to stop")
     print("=" * 60)

@@ -84,34 +84,24 @@ def run_investigation(question: str, user_id: int, document_id=None) -> dict:
 # Node: Analyze Question
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Node: Analyze Question
+# ---------------------------------------------------------------------------
+
 def _node_analyze_question(state: dict) -> dict:
-    question = state["question"].lower()
+    """
+    Classify question intent using the shared _classify_intent function
+    from rag_service. This avoids duplicated fragile keyword lists.
+    """
+    from backend.services.rag_service import _classify_intent
 
-    visual_keywords = [
-        "violation", "detected", "detection", "camera", "worker", "helmet",
-        "hardhat", "vest", "gloves", "goggles", "ppe", "wearing", "alert",
-        "incident", "zone", "morning", "today", "yesterday", "why was",
-    ]
-    doc_keywords = [
-        "policy", "rule", "requirement", "procedure", "regulation", "guideline",
-        "manual", "document", "section", "standard", "what does the", "according to",
-    ]
+    intent = _classify_intent(state["question"])
+    inferred    = intent["inferred_violation"]
+    needs_visual = intent["needs_visual"]
 
-    visual_score = sum(1 for kw in visual_keywords if kw in question)
-    doc_score    = sum(1 for kw in doc_keywords    if kw in question)
-
-    if visual_score >= 2 or any(kw in question for kw in ["why was", "violation", "incident"]):
-        q_type       = "investigation"
-        needs_visual = True
-    elif doc_score > visual_score:
-        q_type       = "document_only"
-        needs_visual = False
-    else:
-        q_type       = "general"
-        needs_visual = True
-
-    from backend.services.visual_retrieval_service import infer_violation_type_from_question
-    inferred = infer_violation_type_from_question(state["question"])
+    # Full Investigation always needs visual when available
+    # (it logs incidents, so we want the most complete picture)
+    q_type = "investigation" if needs_visual else "document_only"
 
     step = {
         "name":   "Question Analysis",
@@ -156,22 +146,22 @@ def _node_retrieve_visual(state: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _node_retrieve_documents(state: dict) -> dict:
-    from backend.services.fts_service import search as fts_search
-    from backend.models.document_models import Document
+    from backend.services.rag_service import _build_doc_query, _retrieve_user_passages
 
     try:
-        raw      = fts_search(query=state["question"], document_id=state.get("document_id"), limit=5)
-        passages = raw.get("results", [])
+        inferred = state.get("inferred_violation")
 
-        if passages:
-            doc_ids      = {p["document_id"] for p in passages}
-            user_doc_ids = {
-                d.id for d in Document.query.filter(
-                    Document.id.in_(doc_ids),
-                    Document.user_id == state["user_id"],
-                ).all()
-            }
-            passages = [p for p in passages if p["document_id"] in user_doc_ids]
+        # If visual evidence reveals a specific violation not inferred from text,
+        # use that class to sharpen the document query.
+        if not inferred and state.get("visual_evidence"):
+            top_label = state["visual_evidence"][0].get("class_label", "")
+            if top_label.lower().startswith("no-"):
+                inferred = top_label.lower()
+
+        doc_query = _build_doc_query(state["question"], inferred)
+        passages = _retrieve_user_passages(
+            doc_query, state["user_id"], state.get("document_id"), top_k=5
+        )
     except Exception as exc:
         log.warning("Document retrieval failed: %s", exc)
         passages = []
@@ -228,12 +218,12 @@ def _node_generate_answer(state: dict) -> dict:
         except Exception as exc:
             log.warning("Gemini failed in workflow: %s", exc)
             from backend.services.rag_service import _retrieval_only_answer, _build_sources
-            answer_text  = _retrieval_only_answer(docs, visual)
+            answer_text  = _retrieval_only_answer(question, docs, visual)
             answer_type  = "retrieval_only"
             llm_used     = False
     else:
         from backend.services.rag_service import _retrieval_only_answer, _build_sources
-        answer_text  = _retrieval_only_answer(docs, visual)
+        answer_text  = _retrieval_only_answer(question, docs, visual)
         answer_type  = "retrieval_only"
         llm_used     = False
 

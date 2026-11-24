@@ -2,7 +2,7 @@
 RAG and LangGraph investigation routes — Milestone 3.
 
 Endpoints:
-  POST /api/rag/ask        — multimodal RAG (document + visual) question answering
+  POST /api/rag/ask        — document-based Quick Answer (no visual detection)
   POST /api/investigate    — full investigation workflow (incident logging + alert)
   GET  /api/rag/detections — visual detection summary for the current user
 """
@@ -16,7 +16,11 @@ rag_bp = Blueprint("rag", __name__)
 @rag_bp.route("/api/rag/ask", methods=["POST"])
 @login_required
 def rag_ask(current_user):
-    """Multimodal RAG question answering (no incident logging)."""
+    """
+    Document-based Quick Answer.
+    Retrieves relevant passages from the user's uploaded documents and
+    generates a natural-language answer. Never retrieves visual detections.
+    """
     body     = request.get_json(silent=True) or {}
     question = body.get("question", "").strip()
 
@@ -25,15 +29,13 @@ def rag_ask(current_user):
     if len(question) > 1000:
         return jsonify({"error": "Question too long (max 1000 chars)."}), 400
 
-    document_id    = body.get("document_id")
-    include_visual = body.get("include_visual", True)
+    document_id = body.get("document_id")
 
     from backend.services.rag_service import answer_question
     result = answer_question(
-        question       = question,
-        user_id        = current_user.id,
-        include_visual = include_visual,
-        document_id    = document_id,
+        question    = question,
+        user_id     = current_user.id,
+        document_id = document_id,
     )
     return jsonify(result), 200
 

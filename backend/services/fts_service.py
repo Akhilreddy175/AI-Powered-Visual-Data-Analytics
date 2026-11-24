@@ -1,11 +1,12 @@
 """
-SQLite FTS5 full-text search service — improved v2.
+SQLite FTS5 full-text search service — v3.
 
-Key improvements over v1:
-  - Smart query builder: phrases quoted, OR fallback for multi-word queries.
-  - Better snippet context (48 tokens).
-  - Full chunk text returned alongside snippet for Q&A passages.
-  - Separate COUNT query avoids FTS5 rank-in-subquery restriction.
+Key design principles:
+  - Stop-word filtering to avoid noise from function words.
+  - Apostrophes and special chars stripped before FTS5 to avoid syntax errors.
+  - Progressive strategy: phrase → AND → NEAR → term-pair OR (no broad OR).
+  - Terms shorter than 3 chars dropped (except known acronyms like PPE).
+  - Porter stemming via FTS5 tokenizer handles morphological variants.
 
 FTS5 table schema:
     chunk_text        - indexed full text content
@@ -162,10 +163,10 @@ def search(query: str, document_id=None, file_type=None, limit=20, offset=0) -> 
     """Full-text search with progressive query fallback.
 
     Strategy order (most precise → broadest):
-      1. Exact phrase (2-6 words quoted)
+      1. Exact phrase (2-5 content words)
       2. All terms AND (default FTS5 behaviour)
       3. NEAR match within 10 tokens
-      4. Any term OR (broadest)
+      4. Best-pair OR (top 2 most specific terms only)
 
     Returns: {results: [...], total: int, query: str, strategy: str}
     Each result includes snippet (highlighted HTML) and text (raw chunk excerpt).
@@ -272,21 +273,79 @@ def search(query: str, document_id=None, file_type=None, limit=20, offset=0) -> 
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Common English stop words — function words that add noise without meaning
+# ---------------------------------------------------------------------------
+_STOP_WORDS = {
+    "a", "an", "the", "and", "or", "not", "but", "if", "in", "on", "at",
+    "to", "of", "with", "by", "from", "about", "as", "into", "that", "this",
+    "these", "those", "it", "its", "so", "any", "all", "my", "your",
+    "our", "their", "can", "could", "would", "should", "will", "may",
+    "might", "shall", "than", "then", "some", "such", "no", "nor",
+    "per", "via", "eg", "ie", "etc",
+    # pronouns
+    "i", "me", "we", "us", "he", "she", "they", "him", "her", "them",
+    # common verbs (function use)
+    "is", "are", "am", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did",
+    # question words  
+    "what", "how", "when", "where", "which", "who", "whom", "whose",
+    "why", "there",
+    # other high-frequency words that add little discriminative value
+    "get", "got", "use", "used", "make", "made", "also", "just",
+    "more", "most", "over", "under", "each", "every", "much", "many",
+    "tell", "show", "give", "take", "describe", "explain", "list",
+    "provide", "include", "ensure", "must", "need", "needs",
+    "based", "related", "given", "including", "regarding",
+}
+
+# Short known acronyms to preserve even though they're < 4 chars
+_KEEP_SHORT = {"ppe", "ppe's", "ppe'", "ppe"}
+
+
 def _extract_terms(raw: str) -> list:
-    """Extract meaningful search terms from raw query."""
-    # Remove most FTS5 special chars but keep hyphen and apostrophe inside words
-    clean = re.sub(r'[^\w\s\-\']', ' ', raw, flags=re.UNICODE)
+    """
+    Extract meaningful search terms from a raw query string.
+
+    - Strips apostrophes and special FTS5 syntax characters to avoid parse errors.
+    - Filters stop words and low-information words.
+    - Deduplicates while preserving order.
+    - Keeps known short acronyms (PPE).
+    """
+    # Remove apostrophes entirely (prevents FTS5 syntax errors like "company's")
+    # Keep hyphens inside words (e.g. "no-hardhat"), strip other punctuation
+    clean = re.sub(r"'", "", raw)                       # drop apostrophes
+    clean = re.sub(r'[^\w\s\-]', ' ', clean, flags=re.UNICODE)  # other punct → space
     tokens = []
+    seen = set()
     for t in clean.split():
-        t = t.strip("-'")
-        # Skip very short or stop-word-only tokens
-        if len(t) >= 2:
+        t = t.strip("-")
+        tl = t.lower()
+        # Keep if: not a stop word AND (length >= 4 OR it's a known short acronym)
+        if tl in _STOP_WORDS:
+            continue
+        if len(t) < 4 and tl not in _KEEP_SHORT:
+            continue
+        if tl not in seen:
+            seen.add(tl)
             tokens.append(t)
     return tokens
 
 
 def _build_query_strategies(terms: list) -> list:
-    """Return FTS5 query strings to try in order (most precise first)."""
+    """
+    Return FTS5 query strings to try in order (most precise first).
+
+    Strategies:
+      1. Exact phrase — only for 2-4 term queries
+      2. AND of all terms — requires all terms present
+      3. NEAR — all terms within 10 tokens
+      4. Specific-pair OR — the two most domain-specific terms joined by OR.
+         Only terms NOT in _GENERIC_FTS_TERMS are used for the OR fallback,
+         preventing overly broad matches on words like "requirements" or "workers"
+         that appear in almost every safety document passage.
+         If no specific terms exist, the OR strategy is skipped entirely.
+    """
     if not terms:
         return []
 
@@ -295,18 +354,60 @@ def _build_query_strategies(terms: list) -> list:
 
     strategies = []
 
-    # 1. Exact phrase (2-6 words)
-    if 2 <= len(terms) <= 6:
+    # 1. Exact phrase (best for 2-4 specific content words)
+    if 2 <= len(terms) <= 4:
         strategies.append(f'"{" ".join(terms)}"')
 
-    # 2. AND of all terms (default FTS5)
+    # 2. AND of all terms
     strategies.append(" ".join(terms))
 
-    # 3. NEAR match (only for short queries)
-    if 2 <= len(terms) <= 4:
+    # 3. NEAR match (all terms within 10 tokens of each other)
+    if 2 <= len(terms) <= 5:
         strategies.append(f'NEAR({" ".join(terms)}, 10)')
 
-    # 4. OR fallback
-    strategies.append(" OR ".join(terms))
+    # 4. OR fallback using only domain-specific terms (not generic safety vocab).
+    #    Sort by length then filter out generic terms to get the most distinctive ones.
+    ranked = sorted(terms, key=len, reverse=True)
+    specific = [t for t in ranked if t.lower() not in _GENERIC_FTS_TERMS]
+
+    if len(specific) >= 2:
+        strategies.append(f'"{specific[0]}" OR "{specific[1]}"')
+    elif len(specific) == 1:
+        strategies.append(specific[0])
+    # If all terms are generic, skip the OR fallback — returning nothing is better
+    # than matching every document in the index.
 
     return strategies
+
+
+# Terms so common in safety/technical documents that using them as a sole OR
+# fallback would match almost any passage, returning irrelevant results.
+# These are still used in AND/NEAR strategies — only excluded from the OR fallback.
+_GENERIC_FTS_TERMS = {
+    # Safety domain universals
+    "safety", "safe",
+    "work", "working", "worked", "worker", "workers", "workplace", "worksite",
+    "hazard", "hazards",
+    "requirement", "requirements",
+    "procedure", "procedures",
+    "regulation", "regulations",
+    "standard", "standards",
+    "protection", "protective",
+    "equipment",
+    "personnel",
+    "site", "area", "areas",
+    "risk", "risks",
+    "control", "controls",
+    "policy", "policies",
+    "operation", "operations",
+    "instruction", "instructions",
+    "section", "chapter",
+    "comply", "compliance",
+    "general",
+    # Question-word remnants
+    "follow", "ensure", "applicable", "relevant",
+    # Financial / reporting terms (generic in many document types)
+    "report", "reports", "reporting",
+    "quarterly", "annual", "monthly",
+    "financial", "cost", "costs",
+}

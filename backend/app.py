@@ -55,6 +55,17 @@ def create_app():
         from backend.models.incident_models import Incident  # noqa
         db.create_all()
 
+        # Ensure schema migrations for SQLite (newly added columns to existing tables)
+        try:
+            with db.engine.connect() as conn:
+                res = conn.execute(db.text("PRAGMA table_info(document_chunk)")).fetchall()
+                cols = [r[1] for r in res]
+                if "is_toc" not in cols:
+                    conn.execute(db.text("ALTER TABLE document_chunk ADD COLUMN is_toc BOOLEAN DEFAULT 0"))
+                    conn.commit()
+        except Exception as e:
+            app.logger.warning("Auto-migration notice: %s", e)
+
         # Configure FTS5 service to use the same DB file as SQLAlchemy, then
         # ensure the FTS virtual table exists with the correct schema.
         from backend.services.fts_service import configure as fts_configure, ensure_fts_table
